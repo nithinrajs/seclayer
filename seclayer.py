@@ -108,7 +108,7 @@ class PLSProtocol(StackingProtocol):
     self.rand = GenRandom()
     self.sent_rand = rand
     pkt = self.PLSPacket.HelloPacket(self.sent_rand)
-    transport.write(pkt)
+    transport.write(pkt.__serialize__())
     if self.state = SER_LISTEN:
       self.state = SER_HELLO_SENT
     else:
@@ -125,14 +125,29 @@ class PLSProtocol(StackingProtocol):
     self.rand = random.getrandbits(32)
     return self.rand
 
+  def data_received(self,data):
+    self.deserializer.update(data)
+    for pkt in self.deserializer.nextPackets():
+      if pkt.Type == "Hello" and self.state == SER_LISTEN:
+        # Call for certificate verification
+        if(Verified):
+          self.sendHello()
+          self.state = SER_HELLO_SENT
+          
+      elif pkt.Type == "Hello" and self.state == CLI_HELLO_SENT:
+        # Do something else
+
+
 
 
 class PLSClientProtocol(PimpBaseProtocol):
+
   def connection_made(self, transport):
     super().connection_made(transport)
-    self._state = self._handle_listening
+    self.PLSProtocol.sendHello()
 
 class PLSServerProtocol(PimpBaseProtocol):
+
   def connection_made(self, transport):
     super().connection_made(transport)
     self.state = SER_LISTEN
