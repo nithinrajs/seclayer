@@ -35,7 +35,7 @@ class PLSPacket(PacketType):
         #pkt.Signature = "" #This too
         print("<><><><> SENT Hello Packet <><><><>")
         return pkt
-
+    @classmethod
     def FinPacket(cls):
         pkt = cls()
         pkt.Type = "Finished"
@@ -47,7 +47,9 @@ class PLSPacket(PacketType):
         print("<><><><> SENT Finished Packet <><><><>")
         return pkt
 
-    def DataPacket(cls):
+   """
+   @classmethod
+   def DataPacket(cls):
         pkt = cls()
         pkt.Type = "Data"
         pkt.Session_Key = "" # need to sort it out
@@ -56,8 +58,9 @@ class PLSPacket(PacketType):
         pkt.Encrypted_Data = ""
         pkt.Signature = "" #This too
         print("<><><><> SENT Data Packet <><><><>")
-        return pkt
+        return pkt """
 
+    @classmethod
     def ClosePacket(cls):
         pkt = cls()
         pkt.Type = "Close"
@@ -79,6 +82,7 @@ class PLSTransport(StackingTransport):
         #self._protocol._sendEncData(data)
         pass
 
+
     def close(self):   # Closing the connection check
         if self._closed:
             return
@@ -87,7 +91,11 @@ class PLSTransport(StackingTransport):
         self._protocol.close()
 
 class PLSProtocol(StackingProtocol):
-  
+  def __init__(self):
+    rand = random.getrandbits(32)
+
+  def sendHello():
+    
 
 class PLSClientProtocol(PimpBaseProtocol):
   def connection_made(self, transport):
