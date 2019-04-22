@@ -92,10 +92,40 @@ class PLSTransport(StackingTransport):
 
 class PLSProtocol(StackingProtocol):
   def __init__(self):
-    rand = random.getrandbits(32)
+    self.sent_rand = 0 #random.getrandbits(32)
+    self.state = ""
+    SER_LISTEN = 100
+    SER_HELLO_SENT = 102
+    SER_SESSION_SENT= 103
+    SER_FIN_SENT = 104
 
-  def sendHello():
-    
+    CLI_HELLO_SENT = 202
+    CLI_SESSION_SENT= 203
+    CLI_FIN_SENT = 204
+
+
+  def sendHello(self):
+    self.rand = GenRandom()
+    self.sent_rand = rand
+    pkt = self.PLSPacket.HelloPacket(self.sent_rand)
+    transport.write(pkt)
+    if self.state = SER_LISTEN:
+      self.state = SER_HELLO_SENT
+    else:
+      self.state = CLI_HELLO_SENT
+
+
+  """def (self):
+    self.rand = GenRandom()
+    self.sent_rand = rand
+    pkt = self.PLSPacket.HelloPacket(self.sent_rand)
+    transport.write(pkt)"""
+
+  def GenRandom(self):
+    self.rand = random.getrandbits(32)
+    return self.rand
+
+
 
 class PLSClientProtocol(PimpBaseProtocol):
   def connection_made(self, transport):
@@ -105,7 +135,7 @@ class PLSClientProtocol(PimpBaseProtocol):
 class PLSServerProtocol(PimpBaseProtocol):
   def connection_made(self, transport):
     super().connection_made(transport)
-    self._state = self._handle_listening
+    self.state = SER_LISTEN
 
 PLSClientFactory = StackingProtocolFactory.CreateFactoryType(PLSClientProtocol)
 PLSServerFactory = StackingProtocolFactory.CreateFactoryType(PLSServerProtocol)
