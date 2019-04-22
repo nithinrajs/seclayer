@@ -8,14 +8,13 @@ class PLSPacket(PacketType):
     DEFINITION_IDENTIFIER = 'PLS.Packet'
     DEFINITION_VERSION = '1.0'
     FIELDS = [
-     ('Type', STRING), # type can be Hello, Finished, Data and Close.
-     ('Session_Key', STRING),
-     ('Random', UINT31),
-     ('Certificate', BUFFER),
-     ('Encrypted_Data', BUFFER),
-     ('Signature', STRING)]
+     ('Type', STRING), # type can be Hello, KeyTransport, Finished, Data and Close.
+     ('Premaster_Secret', UINT32) {OPTIONAL},
+     ('Random', UINT32) {OPTIONAL},
+     ('Certificate', BUFFER) {OPTIONAL},
+     ('Encrypted_Data', BUFFER)]
 
-    PLSCertificate = {
+    PLSCertificate = { # using the x.509 certificate itself.
       "Version_Number": None,
       "Issuer_Name": None,
       "Subject_Name": None,
@@ -28,35 +27,52 @@ class PLSPacket(PacketType):
     def HelloPacket(cls, random):
         pkt = cls()
         pkt.Type = "Hello"
-        #pkt.Session_Key = "" # need to sort it out
+        #pkt.Premaster_Secret = "" # need to sort it out
         pkt.Random = random #random.getrandbits(32) #This too
         pkt.Certificate = PLSCertificate #Should send a list
-        #pkt.Encrypted_Data = ""
-        #pkt.Signature = "" #This too
+        pkt.Encrypted_Data = ""
+
         print("<><><><> SENT Hello Packet <><><><>")
         return pkt
+
+
+    @classmethod
+    def KeyPacket(cls, random):
+      pkt = cls()
+      pkt.Type = " KeyTransport"
+      pkt.Premaster_Secret = random # need to sort it out
+      #pkt.Random = random #This too
+      #pkt.Certificate = PLSCertificate #Should send a list
+      pkt.Encrypted_Data = ""
+
+      print("<><><><> SENT Key Packet <><><><>")
+      return pkt
+
+
     @classmethod
     def FinPacket(cls):
         pkt = cls()
         pkt.Type = "Finished"
-        pkt.Session_Key = "" # need to sort it out
-        pkt.Random = 0 #This too
-        #pkt.Certificate = "" #Should send a list
+        #pkt.Premaster_Secret = "" # need to sort it out
+        pkt.Random = "" #This too
+        pkt.Certificate = "" #Should send a list
         pkt.Encrypted_Data = ""
-        pkt.Signature = "" #This too
+
         print("<><><><> SENT Finished Packet <><><><>")
         return pkt
+
+
 
    """
    @classmethod
    def DataPacket(cls):
         pkt = cls()
         pkt.Type = "Data"
-        pkt.Session_Key = "" # need to sort it out
+        pkt.Premaster_Secret = "" # need to sort it out
         pkt.Random = 0 #This too
         #pkt.Certificate = "" #Should send a list
         pkt.Encrypted_Data = ""
-        pkt.Signature = "" #This too
+
         print("<><><><> SENT Data Packet <><><><>")
         return pkt """
 
@@ -64,11 +80,10 @@ class PLSPacket(PacketType):
     def ClosePacket(cls):
         pkt = cls()
         pkt.Type = "Close"
-        pkt.Session_Key = "" # need to sort it out
+        pkt.Premaster_Secret = "" # need to sort it out
         #pkt.Random = 0 #This too
         #pkt.Certificate = "" #Should send a list
         pkt.Encrypted_Data = ""
-        pkt.Signature = "" #This too
         print("<><><><> SENT Close Packet <><><><>")
         return pkt
 
@@ -93,19 +108,20 @@ class PLSTransport(StackingTransport):
 class PLSProtocol(StackingProtocol):
   def __init__(self):
     self.sent_rand = 0 #random.getrandbits(32)
+    self.pmk = 0
     self.state = ""
     SER_LISTEN = 100
     SER_HELLO_SENT = 102
-    SER_SESSION_SENT= 103
+    SER_SESSION_SENT = 103
     SER_FIN_SENT = 104
 
     CLI_HELLO_SENT = 202
-    CLI_SESSION_SENT= 203
+    CLI_SESSION_SENT = 203
     CLI_FIN_SENT = 204
 
 
   def sendHello(self):
-    self.rand = GenRandom()
+    self.rand = self.GenRandom()
     self.sent_rand = rand
     pkt = self.PLSPacket.HelloPacket(self.sent_rand)
     transport.write(pkt.__serialize__())
@@ -114,16 +130,23 @@ class PLSProtocol(StackingProtocol):
     else:
       self.state = CLI_HELLO_SENT
 
-
-  """def (self):
-    self.rand = GenRandom()
-    self.sent_rand = rand
-    pkt = self.PLSPacket.HelloPacket(self.sent_rand)
-    transport.write(pkt)"""
+  def sendPmk(self):
+    self.pmk = self.Genpmk()
+    pkt = self.PLSPacket.KeyPacket(self.pmk)
+    transport.write(pkt.__serialize__())
+    if self.state = CLI_HELLO_SENT:
+      self.state = CLI_SESSION_SENT
+    else:
+      self.state = SER_SESSION_SENT
 
   def GenRandom(self):
     self.rand = random.getrandbits(32)
     return self.rand
+
+   def Genpmk(self):
+    self.pmk = random.getrandbits(32)
+    return self.pmk
+
 
   def data_received(self,data):
     self.deserializer.update(data)
@@ -133,12 +156,29 @@ class PLSProtocol(StackingProtocol):
         if(Verified):
           self.sendHello()
           self.state = SER_HELLO_SENT
-          
+
       elif pkt.Type == "Hello" and self.state == CLI_HELLO_SENT:
-        # Do something else
+        # Do something else process the packet and prepare for session key
+        pass
 
+      elif pkt.Type == "KeyTransport" and self.state == SER_HELLO_SENT:
+        # get the packet
+        #decrypt the packet
+        # store the premaster key
+        #send Pmk to client signed with clients public key
 
+      elif pkt.Type == "KeyTransport" and self.state == CLI_SESSION_SENT:
+        # decrypt with private key
+        #check if the session key remained same as sent
+        #Prepare tp sent fin
 
+  def sendFin(self):
+    pass
+
+  def sendClose(self):
+    pass
+
+ 
 
 class PLSClientProtocol(PimpBaseProtocol):
 
