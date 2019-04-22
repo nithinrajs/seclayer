@@ -1,7 +1,7 @@
 from playground.network.common import StackingProtocol, StackingTransport, StackingProtocolFactory
 from playground.network.packet import PacketType
 from playground.network.packet.fieldtypes import UINT32, STRING, BUFFER, BOOL
-import os, hashlib, logging, asyncio
+import os, hashlib, logging, asyncio, random
 logger = logging.getLogger('playground.__connector__.' + __name__)
 
 class PLSPacket(PacketType):
@@ -25,45 +25,45 @@ class PLSPacket(PacketType):
     }
 
     @classmethod
-    def HelloPacket(cls, seq):
+    def HelloPacket(cls, random):
         pkt = cls()
         pkt.Type = "Hello"
-        pkt.Session_Key = "" # need to sort it out
-        pkt.Random = 0 #This too
-        pkt.Certificate = "" #Should send a list
-        pkt.Encrypted_Data = ""
-        pkt.Signature = "" #This too
+        #pkt.Session_Key = "" # need to sort it out
+        pkt.Random = random #random.getrandbits(32) #This too
+        pkt.Certificate = PLSCertificate #Should send a list
+        #pkt.Encrypted_Data = ""
+        #pkt.Signature = "" #This too
         print("<><><><> SENT Hello Packet <><><><>")
         return pkt
 
-    def FinPacket(cls, seq):
+    def FinPacket(cls):
         pkt = cls()
         pkt.Type = "Finished"
         pkt.Session_Key = "" # need to sort it out
         pkt.Random = 0 #This too
-        pkt.Certificate = "" #Should send a list
+        #pkt.Certificate = "" #Should send a list
         pkt.Encrypted_Data = ""
         pkt.Signature = "" #This too
         print("<><><><> SENT Finished Packet <><><><>")
         return pkt
 
-    def DataPacket(cls, seq):
+    def DataPacket(cls):
         pkt = cls()
         pkt.Type = "Data"
         pkt.Session_Key = "" # need to sort it out
         pkt.Random = 0 #This too
-        pkt.Certificate = "" #Should send a list
+        #pkt.Certificate = "" #Should send a list
         pkt.Encrypted_Data = ""
         pkt.Signature = "" #This too
         print("<><><><> SENT Data Packet <><><><>")
         return pkt
 
-    def ClosePacket(cls, seq):
+    def ClosePacket(cls):
         pkt = cls()
         pkt.Type = "Close"
         pkt.Session_Key = "" # need to sort it out
-        pkt.Random = 0 #This too
-        pkt.Certificate = "" #Should send a list
+        #pkt.Random = 0 #This too
+        #pkt.Certificate = "" #Should send a list
         pkt.Encrypted_Data = ""
         pkt.Signature = "" #This too
         print("<><><><> SENT Close Packet <><><><>")
