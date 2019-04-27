@@ -2,6 +2,14 @@ from playground.network.common import StackingProtocol, StackingTransport, Stack
 from playground.network.packet import PacketType
 from playground.network.packet.fieldtypes import UINT32, STRING, BUFFER, BOOL
 import os, hashlib, logging, asyncio, random
+
+from cryptography import x509
+from cryptography.hazmat.backends import default_backend
+from OpenSSL import crypto
+
+PATH_TRUSTED_CERT = "/" #This is the path to the trusted cert
+PATH_SELF_CERT = "/" #This is the path to our own certificate
+
 logger = logging.getLogger('playground.__connector__.' + __name__)
 
 class PLSPacket(PacketType):
@@ -60,8 +68,6 @@ class PLSPacket(PacketType):
 
         print("<><><><> SENT Finished Packet <><><><>")
         return pkt
-
-
 
    """
    @classmethod
@@ -143,9 +149,29 @@ class PLSProtocol(StackingProtocol):
     self.rand = random.getrandbits(32)
     return self.rand
 
-   def Genpmk(self):
+  def Genpmk(self):
     self.pmk = random.getrandbits(32)
     return self.pmk
+
+  def verified(cert_data):
+    certificate = crypto.load_certificate(crypto.FILETYPE_PEM, cert_data) #Saving the recieved certificate
+    try:
+      store = crypto.X509Store()
+
+      cert_file = open(PATH_TRUSTED_CERT, 'r')
+      trusted_certificate = crypto.load_certificate(crypto.FILETYPE_PEM, cert_file.read())
+      store.add_cert(trusted_certificate)
+
+      store_ctx = crypto.X509StoreContext(store, certificate)
+      store_ctx.verify_certificate()
+
+      return True
+
+    except Exception as e:
+      print(e)
+      return False
+
+
 
 
   def data_received(self,data):
