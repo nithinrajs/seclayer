@@ -5,10 +5,12 @@ import os, hashlib, logging, asyncio, random
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding 
 from OpenSSL import crypto
 
-PATH_TRUSTED_CERT = "/" #This is the path to the trusted cert
-PATH_SELF_CERT = "/" #This is the path to our own certificate
+PATH_TRUSTED_CERT = "/home/nits/trusted_certs/CA_cert.cert" #This is the path to the trusted cert
+#PATH_SELF_CERT = "/" #This is the path to our own certificate
 
 logger = logging.getLogger('playground.__connector__.' + __name__)
 
@@ -32,14 +34,16 @@ class PLSPacket(PacketType):
     }
 
     @classmethod
-    def HelloPacket(cls, random):
+    def HelloPacket(cls, random, path):
         pkt = cls()
         pkt.Type = "Hello"
         #pkt.Premaster_Secret = "" # need to sort it out
         pkt.Random = random #random.getrandbits(32) #This too
-        pkt.Certificate = PLSCertificate #Should send a list
+        f = open(path,"rb")
+        #certificate = crypto.load_certificate(crypto.FILETYPE_PEM, f.read()) 
+        pkt.Certificate = f.read() #Should send a list
+        #pkt.Certificate = certificate
         pkt.Encrypted_Data = ""
-
         print("<><><><> SENT Hello Packet <><><><>")
         return pkt
 
@@ -114,36 +118,47 @@ class PLSTransport(StackingTransport):
 class PLSProtocol(StackingProtocol):
   def __init__(self):
     self.sent_rand = 0 #random.getrandbits(32)
+    self.recv_rand = 0
     self.pmk = 0
-    self.state = ""
+    self.state = None
+    self.pubkey = None
+    self.recv_cert = None
+
     SER_LISTEN = 100
     SER_HELLO_SENT = 102
-    SER_SESSION_SENT = 103
+    SER_PMK_SENT = 103
     SER_FIN_SENT = 104
 
     CLI_HELLO_SENT = 202
-    CLI_SESSION_SENT = 203
+    CLI_PMK_SENT = 203
     CLI_FIN_SENT = 204
 
 
   def sendHello(self):
     self.rand = self.GenRandom()
     self.sent_rand = rand
-    pkt = self.PLSPacket.HelloPacket(self.sent_rand)
-    transport.write(pkt.__serialize__())
+  
     if self.state = SER_LISTEN:
+      path = "/home/nits/trusted_certs/bank_cert.cert"
+      pkt = self.PLSPacket.HelloPacket(self.sent_rand, path)
+      transport.write(pkt.__serialize__())
       self.state = SER_HELLO_SENT
     else:
+      path = "/home/nits/trusted_certs/client_cert.cert"
+      pkt = self.PLSPacket.HelloPacket(self.sent_rand, path)
+      transport.write(pkt.__serialize__())
       self.state = CLI_HELLO_SENT
 
   def sendPmk(self):
     self.pmk = self.Genpmk()
-    pkt = self.PLSPacket.KeyPacket(self.pmk)
-    transport.write(pkt.__serialize__())
+    
+    
     if self.state = CLI_HELLO_SENT:
-      self.state = CLI_SESSION_SENT
+      pkt = self.PLSPacket.KeyPacket(self.pmk)
+      transport.write(pkt.__serialize__())
+      self.state = CLI_PMK_SENT
     else:
-      self.state = SER_SESSION_SENT
+      self.state = SER_PMK_SENT
 
   def GenRandom(self):
     self.rand = random.getrandbits(32)
@@ -153,8 +168,8 @@ class PLSProtocol(StackingProtocol):
     self.pmk = random.getrandbits(32)
     return self.pmk
 
-  def verified(cert_data):
-    certificate = crypto.load_certificate(crypto.FILETYPE_PEM, cert_data) #Saving the recieved certificate
+  def verified(cert):
+    #certificate = crypto.load_certificate(crypto.FILETYPE_PEM, cert_data) #Saving the recieved certificate
     try:
       store = crypto.X509Store()
 
@@ -162,7 +177,7 @@ class PLSProtocol(StackingProtocol):
       trusted_certificate = crypto.load_certificate(crypto.FILETYPE_PEM, cert_file.read())
       store.add_cert(trusted_certificate)
 
-      store_ctx = crypto.X509StoreContext(store, certificate)
+      store_ctx = crypto.X509StoreContext(store, cert)
       store_ctx.verify_certificate()
 
       return True
@@ -171,20 +186,33 @@ class PLSProtocol(StackingProtocol):
       print(e)
       return False
 
-
-
+  def ProcessCert(self,cert):
+    #self.pubkey = cert.get_pubkey()
+    self.recv_cert = x509.load_pem_x509_certificate(cert, default_backend())
+    self.pubkey = self.recv_cert.public_key
 
   def data_received(self,data):
     self.deserializer.update(data)
     for pkt in self.deserializer.nextPackets():
       if pkt.Type == "Hello" and self.state == SER_LISTEN:
         # Call for certificate verification
-        if(Verified):
+        cert = pkt.Certificate
+        certificate = crypto.load_certificate(crypto.FILETYPE_PEM, cert) 
+        if(verified(certificate)):
+          self.recv_rand = pkt.random
+          self.ProcessCert(cert)
           self.sendHello()
-          self.state = SER_HELLO_SENT
+          #self.state = SER_HELLO_SENT
 
       elif pkt.Type == "Hello" and self.state == CLI_HELLO_SENT:
         # Do something else process the packet and prepare for session key
+        cert = pkt.Certificate
+        certificate = crypto.load_certificate(crypto.FILETYPE_PEM, cert)
+        if(verified(certificate)):
+          self.recv_rand = pkt.random
+          self.ProcessCert(cert)
+          self.sendPmk() # Send PMK
+          #self.state = 
         pass
 
       elif pkt.Type == "KeyTransport" and self.state == SER_HELLO_SENT:
