@@ -67,8 +67,8 @@ class PLSPacket(PacketType):
         pkt = cls()
         pkt.Type = "Finished"
         #pkt.Premaster_Secret = "" # need to sort it out
-        pkt.Random = "" #This too
-        pkt.Certificate = "" #Should send a list
+        #pkt.Random = "" #This too
+        #pkt.Certificate = "" #Should send a list
         pkt.Encrypted_Data = ""
 
         print("<><><><> SENT Finished Packet <><><><>")
@@ -125,6 +125,7 @@ class PLSProtocol(StackingProtocol):
     self.state = None
     self.pubkey = None
     self.recv_cert = None
+    self.masterkey = None
 
     SER_LISTEN = 100
     SER_HELLO_SENT = 102
@@ -174,22 +175,30 @@ class PLSProtocol(StackingProtocol):
 
 
   def recvPmk(self, encrypt_pmk):
+
     if self.state = SER_HELLO_SENT:
+      
       PATH = "/home/nits/trusted_certs/private/bank_cert.pem"
       f = open(PATH,"rb")
       private_key = serialization.load_pem_private_key(
         f.read(),
         password="testbank",
-        backend=default_backend()
-      )
-      self.recv_pmk = private_key.decrypt(
-        encrypt_pmk,
-        padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()),
-        algorithm=hashes.SHA256(),
-        label=None
-        )
+        backend=default_backend())
+
+      self.recv_pmk = private_key.decrypt(encrypt_pmk, padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None))
+
       self.sendPmk(self.recv_pmk)
-)
+
+    else:
+      PATH = "/home/nits/trusted_certs/private/bank_cert.pem"
+      f = open(PATH,"rb")
+      private_key = serialization.load_pem_private_key(f.read(), password="testbank", backend=default_backend())
+      self.recv_pmk = private_key.decrypt(encrypt_pmk, padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(),label=None))
+
+      if self.pmk == self.recv_pmk:
+        self.KDF()
+
+
 
 
   def GenRandom(self):
@@ -223,6 +232,26 @@ class PLSProtocol(StackingProtocol):
     self.recv_cert = cert
     self.pubkey = self.recv_cert.get_pubkey()
     self.pubkey = pubkey.to_cryptography_key()
+
+
+  def KDF(self):
+        print (self.sent_rand)
+        print (self.recv_rand)
+        if "CLI" in self.state:
+          self.masterkey = self.sent_rand
+          self.masterkey += self.recv_rand #self.server_rand
+        else:
+          self.masterkey = self.recv_rand #self.server_rand
+          self.masterkey += self.sent_rand
+
+        self.masterkey += self.PMK
+        kdf = HKDF(algorith = hashes.SHA256(), salt = b'', info=None, length= 48, backend= default_backend())
+        gen = kdf.derive(self.masterkey)
+
+        self.client_write_key = gen[0:16]
+        self.server_write_key = gen[16:32]
+        self.client_iv = gen[32:40]
+        self.server_iv = gen[40:48]
     
 
 
@@ -252,12 +281,13 @@ class PLSProtocol(StackingProtocol):
 
       elif pkt.Type == "KeyTransport" and self.state == SER_HELLO_SENT:
         encrypt_pmk = pkt.Premaster_Secret
-        #decrypt the packet
+        recvPmk(encrypt_pmk) #decrypt the packet
         # store the premaster key
         #send Pmk to client signed with clients public key
 
-      elif pkt.Type == "KeyTransport" and self.state == CLI_SESSION_SENT:
-        # decrypt with private key
+      elif pkt.Type == "KeyTransport" and self.state == CLI_PMK_SENT:
+        encrypt_pmk = pkt.Premaster_Secret
+        recvPmk(encrypt_pmk)# decrypt with private key
         #check if the session key remained same as sent
         #Prepare tp sent fin
 
