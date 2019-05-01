@@ -2,18 +2,19 @@ from playground.network.common import StackingProtocol, StackingTransport, Stack
 from playground.network.packet import PacketType
 from playground.network.packet.fieldtypes import UINT32, STRING, BUFFER, BOOL
 import os, hashlib, logging, asyncio, random
+from . import cert_factory
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
+from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
-from cryptography.hazmat.primitives import serialization 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM 
+
 from OpenSSL import crypto
 
-
-PATH_TRUSTED_CERT = "/home/nits/trusted_certs/CA_cert.cert" #This is the path to the trusted cert
-
-#PATH_SELF_CERT = "/" #This is the path to our own certificate
 
 logger = logging.getLogger('playground.__connector__.' + __name__)
 
@@ -22,28 +23,18 @@ class PLSPacket(PacketType):
     DEFINITION_VERSION = '1.0'
     FIELDS = [
      ('Type', STRING), # type can be Hello, KeyTransport, Finished, Data and Close.
-     ('Premaster_Secret', BUFFER) {OPTIONAL},
-     ('Random', BUFFER) {OPTIONAL},
-     ('Certificate', BUFFER) {OPTIONAL},
-     ('Encrypted_Data', BUFFER)]
-"""
-    PLSCertificate = { # using the x.509 certificate itself.
-      "Version_Number": None,
-      "Issuer_Name": None,
-      "Subject_Name": None,
-      "Public_Key": None,
-      "Public_Key_Alg": None,
-      "Cert_Sign": None
-    }"""
+     ('Premaster_Secret', BUFFER({Optional:True})),
+     ('Random', BUFFER({Optional:True})) ,
+     ('Certificate', LIST(BUFFER, {Optional:True})),
+     ('Encrypted_Data', BUFFER)
+     ]
 
     @classmethod
-    def HelloPacket(cls, random, path):
+    def HelloPacket(cls, random, mychain):
         pkt = cls()
         pkt.Type = "Hello"
-        pkt.Random = random #random.getrandbits(32) #This too
-        f = open(path,"rb")
-        pkt.Certificate = f.read() #Should send a list
-        #pkt.Certificate = certificate
+        pkt.Random = random 
+        pkt.Certificate = mychain 
         pkt.Encrypted_Data = ""
         print("<><><><> SENT Hello Packet <><><><>")
         return pkt
@@ -126,31 +117,43 @@ class PLSProtocol(StackingProtocol):
     self.pubkey = None
     self.recv_cert = None
     self.masterkey = None
+    self.mychain = []
+    self.mykey = None
+    self.peername = None
 
     SER_LISTEN = 100
     SER_HELLO_SENT = 102
     SER_PMK_SENT = 103
-    SER_FIN_SENT = 104
+    SER_EST = 104
 
     CLI_HELLO_SENT = 202
     CLI_PMK_SENT = 203
     CLI_FIN_SENT = 204
+    CLI_EST = 205
 
 
   def sendHello(self):
     self.rand = self.GenRandom()
     self.sent_rand = rand
-  
+
     if self.state = SER_LISTEN:
-      path = "/home/nits/trusted_certs/bank_cert.cert"
-      pkt = self.PLSPacket.HelloPacket(self.sent_rand, path)
+      #path = "/home/nits/trusted_certs/bank_cert.cert"
+
+      pkt = self.PLSPacket.HelloPacket(self.sent_rand, self.mychain)
       transport.write(pkt.__serialize__())
       self.state = SER_HELLO_SENT
+
     else:
-      path = "/home/nits/trusted_certs/client_cert.cert"
-      pkt = self.PLSPacket.HelloPacket(self.sent_rand, path)
+      #path = "/home/nits/trusted_certs/client_cert.cert"
+      pkt = self.PLSPacket.HelloPacket(self.sent_rand, self.mychain)
       transport.write(pkt.__serialize__())
       self.state = CLI_HELLO_SENT
+
+  def mycert(self,mykey,mychain,peername):
+    self.mykey = mykey
+    self.mychain = mychain
+    self.peername = peername
+
 
   def sendPmk(self, pmk = 0):
     if pmk == 0:
@@ -158,11 +161,7 @@ class PLSProtocol(StackingProtocol):
     else:
       self.pmk = pmk
       
-    encrypt_pmk = self.pubkey.encrypt(self.pmk, padding.OAEP(
-        mgf=padding.MGF1(algorithm=hashes.SHA256()),
-        algorithm=hashes.SHA256(),
-        label=None)
-    )
+    encrypt_pmk = self.pubkey.encrypt(self.pmk, padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()),algorithm=hashes.SHA256(),label=None))
 
     if self.state = CLI_HELLO_SENT:
       pkt = self.PLSPacket.KeyPacket(encrypt_pmk)
@@ -173,32 +172,41 @@ class PLSProtocol(StackingProtocol):
       transport.write(pkt.__serialize__())
       self.state = SER_PMK_SENT
 
+  def sendFin(self):
+    if "2" in str(self.state):
+      """data = 
+      aesgcm = AESGCM(self.client_write_key)
+      nounce = self.client_iv
+      enc_data = aesgcm.encrypt(nonce, data, aad)
+      return enc_data"""
+      pkt = self.PLSPacket.FinPacket()
+      transport.write(pkt.__serialize__())
+      self.state = CLI_FIN_SENT
+
+    else:
+      """data = 
+      aesgcm = AESGCM(self.server_write_key)
+      nounce = self.server_iv
+      enc_data = aesgcm.encrypt(nonce, data, aad)
+      return enc_data"""
+      pkt = self.PLSPacket.FinPacket()
+      transport.write(pkt.__serialize__())
+
 
   def recvPmk(self, encrypt_pmk):
 
     if self.state = SER_HELLO_SENT:
-      
-      PATH = "/home/nits/trusted_certs/private/bank_cert.pem"
-      f = open(PATH,"rb")
-      private_key = serialization.load_pem_private_key(
-        f.read(),
-        password="testbank",
-        backend=default_backend())
+      private_key = self.mykey
 
       self.recv_pmk = private_key.decrypt(encrypt_pmk, padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None))
-
       self.sendPmk(self.recv_pmk)
 
     else:
-      PATH = "/home/nits/trusted_certs/private/bank_cert.pem"
-      f = open(PATH,"rb")
-      private_key = serialization.load_pem_private_key(f.read(), password="testbank", backend=default_backend())
+      private_key = self.mykey
       self.recv_pmk = private_key.decrypt(encrypt_pmk, padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(),label=None))
 
       if self.pmk == self.recv_pmk:
         self.KDF()
-
-
 
 
   def GenRandom(self):
@@ -209,35 +217,44 @@ class PLSProtocol(StackingProtocol):
     self.pmk = random.getrandbits(32)
     return self.pmk
 
-  def verified(cert):
-    #certificate = crypto.load_certificate(crypto.FILETYPE_PEM, cert_data) #Saving the recieved certificate
-    try:
-      store = crypto.X509Store()
+  def verified(cert_buffer):
+    if len(cert_buffer) == 3:
+      addr_cert = cert_factory[0]
+      ica_cert = cert_factory[1]
+      root_cert = cert_factory[2]
+      flag = False
 
-      cert_file = open(PATH_TRUSTED_CERT, 'r')
-      trusted_certificate = crypto.load_certificate(crypto.FILETYPE_PEM, cert_file.read())
-      store.add_cert(trusted_certificate)
+      addr_CN = cert_buffer[0].subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+      if self.peername != addr_CN:
+        return False
 
-      store_ctx = crypto.X509StoreContext(store, cert)
-      store_ctx.verify_certificate()
+      for i in range(0,1):
+        issuer = cert_buffer[i].issuer.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+        issuer = issuer.split(".")
+        subject = cert_buffer[i+1].subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+        subject = subject.split(".")
 
-      return True
+        if issuer == subject:
+          flag = True
 
-    except Exception as e:
-      print(e)
+      if flag == True:
+        return True
+      else:
+        return False
+    else:
       return False
+
 
   def ProcessCert(self,cert):
     #self.pubkey = cert.get_pubkey()
     self.recv_cert = cert
-    self.pubkey = self.recv_cert.get_pubkey()
-    self.pubkey = pubkey.to_cryptography_key()
-
+    self.pubkey = self.recv_cert.public_key()
+    
 
   def KDF(self):
         print (self.sent_rand)
         print (self.recv_rand)
-        if "CLI" in self.state:
+        if "1" in str(self.state):
           self.masterkey = self.sent_rand
           self.masterkey += self.recv_rand #self.server_rand
         else:
@@ -245,37 +262,36 @@ class PLSProtocol(StackingProtocol):
           self.masterkey += self.sent_rand
 
         self.masterkey += self.PMK
-        kdf = HKDF(algorith = hashes.SHA256(), salt = b'', info=None, length= 48, backend= default_backend())
+        kdf = HKDF(algorithm = hashes.SHA256(), salt = b'', info=None, length= 48, backend= default_backend())
         gen = kdf.derive(self.masterkey)
 
         self.client_write_key = gen[0:16]
         self.server_write_key = gen[16:32]
         self.client_iv = gen[32:40]
         self.server_iv = gen[40:48]
+
+        if "1" in str(self.state):
+          sendFin()
     
-
-
 
   def data_received(self,data):
     self.deserializer.update(data)
     for pkt in self.deserializer.nextPackets():
       if pkt.Type == "Hello" and self.state == SER_LISTEN:
         # Call for certificate verification
-        cert = pkt.Certificate
-        certificate = crypto.load_certificate(crypto.FILETYPE_PEM, cert) 
-        if(verified(certificate)):
+        cert = pkt.Certificate 
+        if(verified(cert)):
           self.recv_rand = pkt.random
-          self.ProcessCert(certificate)
+          self.ProcessCert(cert[0])
           self.sendHello()
           #self.state = SER_HELLO_SENT
 
       elif pkt.Type == "Hello" and self.state == CLI_HELLO_SENT:
         # Do something else process the packet and prepare for session key
         cert = pkt.Certificate
-        certificate = crypto.load_certificate(crypto.FILETYPE_PEM, cert)
-        if(verified(certificate)):
+        if(verified(cert)):
           self.recv_rand = pkt.random
-          self.ProcessCert(cert)
+          self.ProcessCert(cert[0])
           self.sendPmk() # Send PMK
   
 
@@ -291,24 +307,38 @@ class PLSProtocol(StackingProtocol):
         #check if the session key remained same as sent
         #Prepare tp sent fin
 
-  def sendFin(self):
-    pass
+      elif pkt.Type == "Finished" and self.state == SER_PMK_SENT:
+        sendFin()
+        self.state = SER_EST #Call server connection made of higher protocol
+        self.higherProtocol().connection_made(PLSTransport(self, self.transport))
+
+      elif pkt.Type == "Finished" and self.state == CLI_FIN_SENT:
+        self.state = CLI_EST
+        self.higherProtocol().connection_made(PLSTransport(self, self.transport)) #call client higher protocol
+
+  
 
   def sendClose(self):
     pass
-
- 
 
 class PLSClientProtocol(PimpBaseProtocol):
 
   def connection_made(self, transport):
     super().connection_made(transport)
+    address, port = transport.get_extra_info("sockname")
+    mykey, mychain = cert_factory.get_credentials(address)
+    peeraddress = transport.get_extra_info("peername")[0]
+    self.PLSProtocol.mycert(mykey,mychain,peeraddress)
     self.PLSProtocol.sendHello()
 
 class PLSServerProtocol(PimpBaseProtocol):
 
   def connection_made(self, transport):
     super().connection_made(transport)
+    address, port = transport.get_extra_info("sockname")
+    mykey, mychain = cert_factory.get_credentials(address)
+    peeraddress = transport.get_extra_info("peername")[0]
+    self.PLSProtocol.mycert(mykey,mychain,peeraddress)
     self.state = SER_LISTEN
 
 PLSClientFactory = StackingProtocolFactory.CreateFactoryType(PLSClientProtocol)
