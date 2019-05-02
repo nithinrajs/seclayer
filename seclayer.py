@@ -69,30 +69,41 @@ class PLSPacket(PacketType):
     def ClosePacket(cls):
         pkt = cls()
         pkt.Type = "Close"
-        pkt.Premaster_Secret = "" # need to sort it out
+        #pkt.Premaster_Secret = "" # need to sort it out
         #pkt.Random = 0 #This too
         #pkt.Certificate = "" #Should send a list
         pkt.Encrypted_Data = b""
         print("<><><><> SENT Close Packet <><><><>")
         return pkt
 
+    @classmethod
+    def DataPacket(cls, encrypted_data):
+        pkt = cls()
+        pkt.Type = "Data"
+        #pkt.Premaster_Secret = "" # need to sort it out
+        #pkt.Random = 0 #This too
+        #pkt.Certificate = "" #Should send a list
+        pkt.Encrypted_Data = encrypted_data
+        print("<><><><> SENT Close Packet <><><><>")
+        return pkt
+
 class PLSTransport(StackingTransport):
     def __init__(self, protocol, lower_transport):
         super().__init__(lower_transport)
-        self._protocol = protocol
-        self._closed = False
+        self.protocol = protocol
+        self.closed = False
 
     def write(self, data):
-        #self._protocol._sendEncData(data)
+        self.protocol.sendEncData(data)
         pass
 
 
     def close(self):   # Closing the connection check
-        if self._closed:
+        if self.closed:
             return
-        self._closed = True
-        self._protocol.higherProtocol().connection_lost(None)
-        self._protocol.close()
+        self.closed = True
+        self.protocol.higherProtocol().connection_lost(None)
+        self.protocol.close()
 
 class PLSProtocol(StackingProtocol):
 
@@ -123,6 +134,19 @@ class PLSProtocol(StackingProtocol):
     self.CLI_FIN_SENT = 204
     self.CLI_EST = 205
 
+  def sendEncData(self,data):
+    counter
+    if "2" in self.state:
+      aesgcm = AESGCM(self.client_write_key)
+      nonce = self.client_iv
+      enc_data = aesgcm.encrypt(nonce, data, None)
+      return enc_data
+
+    else:
+      aesgcm = AESGCM(self.server_write_key)
+      nonce = self.server_iv
+      enc_data = aesgcm.encrypt(nonce, data, None)
+      return enc_data
 
   def sendHello(self):
     rand = self.GenRandom()
@@ -170,7 +194,6 @@ class PLSProtocol(StackingProtocol):
 
   def sendFin(self):
     if "2" in str(self.state):
-      
       """data = 
       aesgcm = AESGCM(self.client_write_key)
       nounce = self.client_iv
