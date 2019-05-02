@@ -84,7 +84,7 @@ class PLSPacket(PacketType):
         #pkt.Random = 0 #This too
         #pkt.Certificate = "" #Should send a list
         pkt.Encrypted_Data = encrypted_data
-        print("<><><><> SENT Close Packet <><><><>")
+        print("<><><><> SENT Data Packet <><><><>")
         return pkt
 
 class PLSTransport(StackingTransport):
@@ -123,6 +123,7 @@ class PLSProtocol(StackingProtocol):
     self.mychain = []
     self.mykey = None
     self.peername = None
+    self.count = 0
 
     self.SER_LISTEN = 100
     self.SER_HELLO_SENT = 102
@@ -135,18 +136,47 @@ class PLSProtocol(StackingProtocol):
     self.CLI_EST = 205
 
   def sendEncData(self,data):
-    counter
-    if "2" in self.state:
+    counter = self.getcounter()
+    
+    if "2" in str(self.state):
       aesgcm = AESGCM(self.client_write_key)
       nonce = self.client_iv
+      nonce = nonce + counter
       enc_data = aesgcm.encrypt(nonce, data, None)
-      return enc_data
+      
+      pkt = PLSPacket.DataPacket(enc_data)
+      self.transport.write(pkt.__serialize__())
 
     else:
       aesgcm = AESGCM(self.server_write_key)
       nonce = self.server_iv
+      nonce = nonce + counter
       enc_data = aesgcm.encrypt(nonce, data, None)
-      return enc_data
+      
+      pkt = PLSPacket.DataPacket(enc_data)
+      self.transport.write(pkt.__serialize__())
+
+  def recvEncData(self,data):
+    
+    counter = self.getcounter()
+    
+    if "2" in str(self.state):
+      aesgcm = AESGCM(self.server_write_key)
+      nonce = self.server_iv
+      nonce = nonce + counter
+      data = aesgcm.decrypt(nonce, data, None)
+      
+      return data
+      
+
+    else:
+      aesgcm = AESGCM(self.client_write_key)
+      nonce = self.client_iv
+      nonce = nonce + counter
+      data = aesgcm.decrypt(nonce, data, None)
+      
+      return data
+      
 
   def sendHello(self):
     rand = self.GenRandom()
@@ -239,6 +269,20 @@ class PLSProtocol(StackingProtocol):
     pmk = str(random.getrandbits(32))
     return pmk.encode()
 
+  def getcounter(self):
+    out = self.count
+    #print(self.count)
+    out = str(bin(out)[2:])
+    while len(out) < 4:
+      out = "0" + out
+    #print(out)
+    
+    self.count = self.count + 1
+    
+    if self.count >=15:
+      self.count = 0
+    return out.encode()
+
   def verify_cert(self,buff):
     #return True
     if len(buff) == 3:
@@ -293,7 +337,7 @@ class PLSProtocol(StackingProtocol):
         #print(self.masterkey)
         kdf = HKDF(algorithm = hashes.SHA256(), salt = b'', info=None, length= 48, backend= default_backend())
         gen = kdf.derive(self.masterkey)
-        print("<><><><><><><> "+ str(gen)+ "<><><><><><><><><><>")
+        #print("<><><><><><><> "+ str(gen)+ "<><><><><><><><><><>")
 
         self.client_write_key = gen[0:16]
         self.server_write_key = gen[16:32]
@@ -351,6 +395,16 @@ class PLSProtocol(StackingProtocol):
         print("ESTABLISHED")
         self.higherProtocol().connection_made(PLSTransport(self, self.transport)) #call client higher protocol
 
+      elif pkt.Type == "Data" and self.state == self.SER_EST:
+        print("I AM HERE!!!")
+        data = self.recvEncData(pkt.Encrypted_Data)
+        print(data)
+        self.higherProtocol().data_received(data)
+
+      elif pkt.Type == "Data" and self.state == self.CLI_EST:
+        data = self.recvEncData(pkt.Encrypted_Data)
+        print(data)
+        self.higherProtocol().data_received(data)
 
   def sendClose(self):
     pass
