@@ -290,10 +290,12 @@ class PLSProtocol(StackingProtocol):
       flag = False
       for cert in buff:
         cert_buffer.append(x509.load_pem_x509_certificate(cert, default_backend()))
-
-      #addr_CN = cert_buffer[0].subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+      #print(str(self.peername))
+      addr_CN = cert_buffer[0].subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+      #print(str(addr_CN))
       #if self.peername != addr_CN:
-      #  return False
+      if addr_CN not in self.peername:
+        return False
 
       for i in range(0,1):
         issuer = cert_buffer[i].issuer.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
