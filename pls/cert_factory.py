@@ -2,7 +2,7 @@ import os
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
-PATH = "/home/nits/Downloads/"
+PATH = "/home/nithin/seclayer/pcert/"
 def get_credentials(address):
 	#if address == "2019.2.1.0":
 		f = open(PATH + "20191_signed.cert","rb")

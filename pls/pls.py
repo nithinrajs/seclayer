@@ -290,10 +290,14 @@ class PLSProtocol(StackingProtocol):
       flag = False
       for cert in buff:
         cert_buffer.append(x509.load_pem_x509_certificate(cert, default_backend()))
-
-      #addr_CN = cert_buffer[0].subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+      #print(str(self.peername))
+      self.peername = self.peername.split(".")
+      addr_CN = cert_buffer[0].subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+      #print(str(addr_CN))
+      add_CN = addr_CN.split(".")
       #if self.peername != addr_CN:
-      #  return False
+      #if addr_CN[0] not in self.peername[0]:
+        #return False
 
       for i in range(0,1):
         issuer = cert_buffer[i].issuer.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
@@ -356,17 +360,22 @@ class PLSProtocol(StackingProtocol):
         # Call for certificate verification
         cert = pkt.Certificate
         print(str(cert))
+
         if(self.verify_cert(cert)):
+          print("Server verification Done")
           self.recv_rand = pkt.Random
-          
           self.ProcessCert(cert[0])
           self.sendHello()
           #self.state = SER_HELLO_SENT
+
+        else:
+          pass
 
       elif pkt.Type == "Hello" and self.state == self.CLI_HELLO_SENT:
         # Do something else process the packet and prepare for session key
         cert = pkt.Certificate
         if(self.verify_cert(cert)):
+          print("Client verification Done")
           self.recv_rand = pkt.Random
           self.ProcessCert(cert[0])
           
@@ -398,13 +407,17 @@ class PLSProtocol(StackingProtocol):
       elif pkt.Type == "Data" and self.state == self.SER_EST:
         print("I AM HERE!!!")
         data = self.recvEncData(pkt.Encrypted_Data)
-        print(data)
+        #print(data)
         self.higherProtocol().data_received(data)
 
       elif pkt.Type == "Data" and self.state == self.CLI_EST:
         data = self.recvEncData(pkt.Encrypted_Data)
         print(data)
         self.higherProtocol().data_received(data)
+
+      else:
+        pass
+	
 
   def sendClose(self):
     pass
